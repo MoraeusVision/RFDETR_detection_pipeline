@@ -201,6 +201,12 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Ignore model artifacts in project/
+project/model_content/
+
+# Ignore output
+output/
+
 # Marimo
 marimo/_static/
 marimo/_lsp/
