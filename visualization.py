@@ -8,7 +8,10 @@ class Visualizer():
 
     def handle_event(self, event, data):
         if event == "on_inference_result":
-            frame = self.box_annotator.annotate(scene=data.frame_context.frame, detections=data.frame_context.detections)
+            frame = data.frame_context.frame
+            
+            frame = self.box_annotator.annotate(scene=frame, detections=data.frame_context.detections)
+            
             sv.plot_image(frame, (12, 12))
 
     def cleanup(self):

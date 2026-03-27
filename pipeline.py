@@ -14,8 +14,9 @@ class DetectionPipeline():
             if frame is None:
                 break
 
+            ctx.frame_context.frame = frame
             ctx.frame_context.detections = self.model.predict(frame)
-            print(ctx.frame_context.detections)
+            
             self.notify("on_inference_result", ctx)
 
     def notify(self, event_name, data=None):
