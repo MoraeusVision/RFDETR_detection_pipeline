@@ -1,5 +1,5 @@
 {
-	"source": "example_media/drones/drone2.jpg",
+	"source": "example_media/drones/vid_drone2.mp4",
 	"tracker": true,
 	"model_path": "project/model_content/checkpoint_best_ema.pth",
 	"show": true,
