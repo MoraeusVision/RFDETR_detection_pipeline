@@ -202,10 +202,7 @@ cython_debug/
 .cursorindexingignore
 
 # Ignore model artifacts in project/
-project/model_content/
-
-# Ignore output
-output/
+models/*
 
 # Marimo
 marimo/_static/
