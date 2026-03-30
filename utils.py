@@ -12,3 +12,8 @@ def get_device():
         device = "cpu"
     logging.info(f"Using device: {device}")
     return device
+
+def parse_video_source(video_arg):
+    if video_arg.isdigit():
+        return int(video_arg)
+    return video_arg

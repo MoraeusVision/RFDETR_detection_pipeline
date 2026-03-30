@@ -5,7 +5,7 @@ from inference.core.interfaces.camera.entities import VideoFrame
 from inference import InferencePipeline
 from rfdetr import RFDETRNano
 import supervision as sv
-from utils import get_device
+from utils import get_device, parse_video_source
 import argparse
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
@@ -15,10 +15,11 @@ MODEL_PATH = "models/checkpoint_best_ema.pth"
 OUTPUT_VIDEO_PATH = "output/saved_video.mp4"
 
 class DetectionApp:
-    def __init__(self, weights_path: str, video_path: str, show: bool, save: bool, output_path: str):
+    def __init__(self, weights_path: str, video_source: str, show: bool, save: bool, output_path: str):
         self.show = show
         self.save = save
         self.output_path = output_path
+        self.video_source = parse_video_source(video_source)
 
         # Model
         self.model = RFDETRNano(pretrain_weights=weights_path, device=get_device())
@@ -26,13 +27,12 @@ class DetectionApp:
 
         # Supervision tools
         self.tracker = sv.ByteTrack()
-        if self.show:
-            self.label_annotator = sv.LabelAnnotator()
-            self.box_annotator = sv.BoxAnnotator()
+        self.label_annotator = sv.LabelAnnotator()
+        self.box_annotator = sv.BoxAnnotator()
 
         # Video info - used for saving
         if self.save:
-            self.video_info = sv.VideoInfo.from_video_path(video_path)
+            self.video_info = sv.VideoInfo.from_video_path(self.video_source)
         
         # State
         self.paused = False
@@ -40,7 +40,7 @@ class DetectionApp:
 
         # Pipeline
         self.pipeline = InferencePipeline.init_with_custom_logic(
-            video_reference=video_path,
+            video_reference=self.video_source,
             on_video_frame=self.infer,
             on_prediction=self.on_prediction,
         )
@@ -120,7 +120,7 @@ def parse_args():
     parser.add_argument("--weights", type=str, default=MODEL_PATH)
     parser.add_argument("--output", type=str, default=OUTPUT_VIDEO_PATH)
 
-    parser.add_argument("--show", action="store_true", default=True)
+    parser.add_argument("--show", action="store_true", default=False)
     parser.add_argument("--save", action="store_true", default=False)
 
     return parser.parse_args()
@@ -131,7 +131,7 @@ if __name__ == "__main__":
 
     app = DetectionApp(
         weights_path=args.weights,
-        video_path=args.video,
+        video_source=args.video,
         show=args.show,
         save=args.save,
         output_path=args.output
