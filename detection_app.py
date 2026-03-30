@@ -26,11 +26,13 @@ class DetectionApp:
 
         # Supervision tools
         self.tracker = sv.ByteTrack()
-        self.label_annotator = sv.LabelAnnotator()
-        self.box_annotator = sv.BoxAnnotator()
+        if self.show:
+            self.label_annotator = sv.LabelAnnotator()
+            self.box_annotator = sv.BoxAnnotator()
 
-        # Save video
-        self.video_info = sv.VideoInfo.from_video_path(video_path)
+        # Video info - used for saving
+        if self.save:
+            self.video_info = sv.VideoInfo.from_video_path(video_path)
         
         # State
         self.paused = False
@@ -48,46 +50,45 @@ class DetectionApp:
         return [predictions]
 
     def on_prediction(self, prediction, video_frame):
-        self.visualization(prediction=prediction, video_frame=video_frame)
-        self.save_video()
+        self.process_predicted_frame(prediction=prediction, video_frame=video_frame)
+
+        if self.show:
+            self.visualization()
+        if self.save:
+            self.save_video()
+
+    def process_predicted_frame(self, prediction, video_frame):
+        tracked_detections = self.tracker.update_with_detections(prediction)
+
+        labels = [
+            f"Drone {conf:.2f} ID:{int(track_id)}"
+            for track_id, conf in zip(
+                tracked_detections.tracker_id,
+                tracked_detections.confidence
+            )
+        ]
+
+        annotated_image = video_frame.image.copy()
+        annotated_image = self.box_annotator.annotate(
+            scene=annotated_image,
+            detections=tracked_detections
+        )
+
+        annotated_image = self.label_annotator.annotate(
+            annotated_image,
+            detections=tracked_detections,
+            labels=labels
+        )
+
+        self.last_frame = annotated_image
 
     def save_video(self):
         if self.last_frame is not None:
             self.sink.write_frame(self.last_frame)
 
-    def visualization(self, prediction, video_frame: VideoFrame):
-        if not self.paused:
-            # Tracking
-            tracked_detections = self.tracker.update_with_detections(prediction)
-
-            # Labels
-            labels = [
-                f"Drone {conf:.2f} ID:{int(track_id)}"
-                for track_id, conf in zip(
-                    tracked_detections.tracker_id,
-                    tracked_detections.confidence
-                )
-            ]
-
-            # Annotate
-            annotated_image = video_frame.image.copy()
-            annotated_image = self.box_annotator.annotate(
-                scene=annotated_image,
-                detections=tracked_detections
-            )
-
-            annotated_image = self.label_annotator.annotate(
-                annotated_image,
-                detections=tracked_detections,
-                labels=labels
-            )
-
-            self.last_frame = annotated_image
-
-        # Show
+    def visualization(self):
         cv2.imshow("Predictions", self.last_frame)
 
-        # Keyboard control
         key = cv2.waitKey(1) & 0xFF
 
         if key == ord("q"):
@@ -99,9 +100,12 @@ class DetectionApp:
             print("Paused" if self.paused else "Resumed")
 
     def run(self):
-        with sv.VideoSink(self.output_path, self.video_info) as sink:
-            self.sink = sink
-
+        if self.save:
+            with sv.VideoSink(self.output_path, self.video_info) as sink:
+                self.sink = sink
+                self.pipeline.start()
+                self.pipeline.join()
+        else:
             self.pipeline.start()
             self.pipeline.join()
 
@@ -116,8 +120,8 @@ def parse_args():
     parser.add_argument("--weights", type=str, default=MODEL_PATH)
     parser.add_argument("--output", type=str, default=OUTPUT_VIDEO_PATH)
 
-    parser.add_argument("--show", action="store_true")
-    parser.add_argument("--save", action="store_true")
+    parser.add_argument("--show", action="store_true", default=True)
+    parser.add_argument("--save", action="store_true", default=False)
 
     return parser.parse_args()
 
