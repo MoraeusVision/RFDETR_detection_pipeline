@@ -11,12 +11,12 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(
 
 VIDEO_PATH = "example_media/drones/vid_drone2.mp4"
 MODEL_PATH = "models/checkpoint_best_ema.pth"
+OUTPUT_VIDEO_PATH = "output/saved_video.mp4"
 
-class DroneApp:
+class DetectionApp:
     def __init__(self, weights_path: str, video_path: str):
         # Model
-        device = get_device()
-        self.model = RFDETRNano(pretrain_weights=weights_path, device=device)
+        self.model = RFDETRNano(pretrain_weights=weights_path, device=get_device())
         self.model.optimize_for_inference()
 
         # Supervision tools
@@ -24,6 +24,9 @@ class DroneApp:
         self.label_annotator = sv.LabelAnnotator()
         self.box_annotator = sv.BoxAnnotator()
 
+        # Save video
+        self.video_info = sv.VideoInfo.from_video_path(video_path)
+        
         # State
         self.paused = False
         self.last_frame = None
@@ -41,10 +44,11 @@ class DroneApp:
 
     def on_prediction(self, prediction, video_frame):
         self.visualization(prediction=prediction, video_frame=video_frame)
-        self.another_sink()
+        self.save_video()
 
-    def another_sink(self):
-        pass
+    def save_video(self):
+        if self.last_frame is not None:
+            self.sink.write_frame(self.last_frame)
 
     def visualization(self, prediction, video_frame: VideoFrame):
         if not self.paused:
@@ -90,13 +94,17 @@ class DroneApp:
             print("Paused" if self.paused else "Resumed")
 
     def run(self):
-        self.pipeline.start()
-        self.pipeline.join()
+        with sv.VideoSink(OUTPUT_VIDEO_PATH, self.video_info) as sink:
+            self.sink = sink
+
+            self.pipeline.start()
+            self.pipeline.join()
+
         cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
-    app = DroneApp(
+    app = DetectionApp(
         weights_path=MODEL_PATH,
         video_path=VIDEO_PATH
     )
