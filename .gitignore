@@ -203,6 +203,7 @@ cython_debug/
 
 # Ignore model artifacts in project/
 models/*
+output/*
 
 # Marimo
 marimo/_static/

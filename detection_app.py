@@ -1,17 +1,22 @@
 import cv2
+import logging
 from typing import List, Any
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference import InferencePipeline
 from rfdetr import RFDETRNano
 import supervision as sv
+from utils import get_device
+
+logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 VIDEO_PATH = "example_media/drones/vid_drone2.mp4"
-MODEL_PATH = "models/drone_detection/checkpoint_best_ema.pth"
+MODEL_PATH = "models/checkpoint_best_ema.pth"
 
 class DroneApp:
     def __init__(self, weights_path: str, video_path: str):
         # Model
-        self.model = RFDETRNano(pretrain_weights=weights_path, device="mps")
+        device = get_device()
+        self.model = RFDETRNano(pretrain_weights=weights_path, device=device)
         self.model.optimize_for_inference()
 
         # Supervision tools
@@ -39,7 +44,6 @@ class DroneApp:
         self.another_sink()
 
     def another_sink(self):
-        print("Another sink here")
         pass
 
     def visualization(self, prediction, video_frame: VideoFrame):
