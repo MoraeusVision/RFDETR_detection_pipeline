@@ -6,6 +6,7 @@ from inference import InferencePipeline
 from rfdetr import RFDETRNano
 import supervision as sv
 from utils import get_device
+import argparse
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -14,7 +15,11 @@ MODEL_PATH = "models/checkpoint_best_ema.pth"
 OUTPUT_VIDEO_PATH = "output/saved_video.mp4"
 
 class DetectionApp:
-    def __init__(self, weights_path: str, video_path: str):
+    def __init__(self, weights_path: str, video_path: str, show: bool, save: bool, output_path: str):
+        self.show = show
+        self.save = save
+        self.output_path = output_path
+
         # Model
         self.model = RFDETRNano(pretrain_weights=weights_path, device=get_device())
         self.model.optimize_for_inference()
@@ -94,7 +99,7 @@ class DetectionApp:
             print("Paused" if self.paused else "Resumed")
 
     def run(self):
-        with sv.VideoSink(OUTPUT_VIDEO_PATH, self.video_info) as sink:
+        with sv.VideoSink(self.output_path, self.video_info) as sink:
             self.sink = sink
 
             self.pipeline.start()
@@ -103,9 +108,28 @@ class DetectionApp:
         cv2.destroyAllWindows()
 
 
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Detection App")
+
+    parser.add_argument("--video", type=str, default=VIDEO_PATH)
+    parser.add_argument("--weights", type=str, default=MODEL_PATH)
+    parser.add_argument("--output", type=str, default=OUTPUT_VIDEO_PATH)
+
+    parser.add_argument("--show", action="store_true")
+    parser.add_argument("--save", action="store_true")
+
+    return parser.parse_args()
+
+
 if __name__ == "__main__":
+    args = parse_args()
+
     app = DetectionApp(
-        weights_path=MODEL_PATH,
-        video_path=VIDEO_PATH
+        weights_path=args.weights,
+        video_path=args.video,
+        show=args.show,
+        save=args.save,
+        output_path=args.output
     )
     app.run()
