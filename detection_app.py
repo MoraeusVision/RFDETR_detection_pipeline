@@ -11,14 +11,16 @@ import argparse
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 VIDEO_PATH = "example_media/drones/vid_drone2.mp4"
-MODEL_PATH = "models/checkpoint_best_ema.pth"
+MODEL_PATH = "models/drone_detection/checkpoint_best_ema.pth"
 OUTPUT_VIDEO_PATH = "output/saved_video.mp4"
 
 class DetectionApp:
-    def __init__(self, weights_path: str, video_source: str, show: bool, save: bool, output_path: str):
+    def __init__(self, weights_path: str, video_source: str, show: bool, save: bool, output_path: str, track: bool):
         self.show = show
         self.save = save
+        self.track = track
         self.output_path = output_path
+        self.last_frame = None
         self.video_source = parse_video_source(video_source)
 
         # Model
@@ -36,7 +38,6 @@ class DetectionApp:
         
         # State
         self.paused = False
-        self.last_frame = None
 
         # Pipeline
         self.pipeline = InferencePipeline.init_with_custom_logic(
@@ -45,38 +46,62 @@ class DetectionApp:
             on_prediction=self.on_prediction,
         )
 
+    def process_predicted_frame(self, prediction, video_frame):
+        # Project logic comes here
+        pass
+
+
+
+
+##### Detection and tracking functions #####
+
+
+    def on_prediction(self, prediction, video_frame):
+        if self.track:
+            prediction = self.track_objects(prediction, video_frame)
+
+        self.process_predicted_frame(prediction=prediction, video_frame=video_frame)
+
+        if self.show or self.save:
+            self.annotate_image(prediction, video_frame)
+            if self.show:
+                self.visualization()
+            if self.save:
+                self.save_video()
+
     def infer(self, video_frames: List[VideoFrame]) -> List[Any]:
         predictions = self.model.predict([v.image for v in video_frames])
         return [predictions]
 
-    def on_prediction(self, prediction, video_frame):
-        self.process_predicted_frame(prediction=prediction, video_frame=video_frame)
-
-        if self.show:
-            self.visualization()
-        if self.save:
-            self.save_video()
-
-    def process_predicted_frame(self, prediction, video_frame):
+    def track_objects(self, prediction, video_frame):
         tracked_detections = self.tracker.update_with_detections(prediction)
+        return tracked_detections
 
-        labels = [
-            f"Drone {conf:.2f} ID:{int(track_id)}"
-            for track_id, conf in zip(
-                tracked_detections.tracker_id,
-                tracked_detections.confidence
-            )
-        ]
+    def annotate_image(self, prediction, video_frame):
+        if self.track and prediction.tracker_id is not None:
+            labels = [
+                f"Drone {conf:.2f} ID:{int(track_id)}"
+                for track_id, conf in zip(
+                    prediction.tracker_id,
+                    prediction.confidence
+                )
+            ]
+        else:
+            labels = [
+                f"Drone {conf:.2f}"
+                for conf in prediction.confidence
+            ]
 
         annotated_image = video_frame.image.copy()
+
         annotated_image = self.box_annotator.annotate(
             scene=annotated_image,
-            detections=tracked_detections
+            detections=prediction
         )
 
         annotated_image = self.label_annotator.annotate(
             annotated_image,
-            detections=tracked_detections,
+            detections=prediction,
             labels=labels
         )
 
@@ -119,7 +144,8 @@ def parse_args():
     parser.add_argument("--video", type=str, default=VIDEO_PATH)
     parser.add_argument("--weights", type=str, default=MODEL_PATH)
     parser.add_argument("--output", type=str, default=OUTPUT_VIDEO_PATH)
-
+    
+    parser.add_argument("--track", action="store_true", help="Enable tracking")
     parser.add_argument("--show", action="store_true", default=False)
     parser.add_argument("--save", action="store_true", default=False)
 
@@ -134,6 +160,7 @@ if __name__ == "__main__":
         video_source=args.video,
         show=args.show,
         save=args.save,
+        track=args.track,
         output_path=args.output
     )
     app.run()
