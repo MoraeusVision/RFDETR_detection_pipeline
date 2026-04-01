@@ -13,6 +13,81 @@ logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(
 VIDEO_PATH = "example_media/drones/vid_drone2.mp4"
 MODEL_PATH = "models/drone_detection/checkpoint_best_ema.pth"
 OUTPUT_VIDEO_PATH = "output/saved_video.mp4"
+PREDICT_THRESHOLD = 0.1
+
+
+class PredictionFrameRenderer:
+    def __init__(self, track: bool):
+        self.track = track
+        self.label_annotator = sv.LabelAnnotator()
+        self.box_annotator = sv.BoxAnnotator()
+
+    def get_labels(self, prediction):
+        if self.track and prediction.tracker_id is not None:
+            return [
+                f"Drone {conf:.2f} ID:{int(track_id)}"
+                for track_id, conf in zip(
+                    prediction.tracker_id,
+                    prediction.confidence,
+                )
+            ]
+
+        return [f"Drone {conf:.2f}" for conf in prediction.confidence]
+
+    def render(self, prediction, video_frame):
+        labels = self.get_labels(prediction)
+        annotated_image = video_frame.image.copy()
+
+        annotated_image = self.box_annotator.annotate(
+            scene=annotated_image,
+            detections=prediction,
+        )
+
+        annotated_image = self.label_annotator.annotate(
+            annotated_image,
+            detections=prediction,
+            labels=labels,
+        )
+
+        return annotated_image
+
+
+class FrameOutputManager:
+    def __init__(self, show: bool, save: bool):
+        self.show = show
+        self.save = save
+        self.paused = False
+        self.sink = None
+        self.paused_frame = None
+
+    def set_sink(self, sink):
+        self.sink = sink
+
+    def emit(self, frame, pipeline):
+        if self.show and frame is not None:
+            self.visualize(frame, pipeline)
+
+        if self.save and self.sink is not None and frame is not None:
+            self.sink.write_frame(frame)
+
+    def visualize(self, frame, pipeline):
+        # Pause only affects what is displayed; inference and saving continue.
+        display_frame = self.paused_frame if self.paused and self.paused_frame is not None else frame
+        cv2.imshow("Predictions", display_frame)
+
+        key = cv2.waitKey(1) & 0xFF
+
+        if key == ord("q"):
+            pipeline.terminate()
+            return
+
+        if key == ord(" "):
+            self.paused = not self.paused
+            if self.paused:
+                self.paused_frame = frame.copy()
+            else:
+                self.paused_frame = None
+            logging.info("Paused" if self.paused else "Resumed")
 
 class DetectionApp:
     def __init__(self, weights_path: str, video_source: str, show: bool, save: bool, output_path: str, track: bool):
@@ -29,15 +104,12 @@ class DetectionApp:
 
         # Supervision tools
         self.tracker = sv.ByteTrack()
-        self.label_annotator = sv.LabelAnnotator()
-        self.box_annotator = sv.BoxAnnotator()
+        self.renderer = PredictionFrameRenderer(track=self.track)
+        self.output_manager = FrameOutputManager(show=self.show, save=self.save)
 
         # Video info - used for saving
         if self.save:
             self.video_info = sv.VideoInfo.from_video_path(self.video_source)
-        
-        # State
-        self.paused = False
 
         # Pipeline
         self.pipeline = InferencePipeline.init_with_custom_logic(
@@ -47,8 +119,8 @@ class DetectionApp:
         )
 
     def process_predicted_frame(self, prediction, video_frame):
-        # Project logic comes here
-        pass
+        """Project logic comes here"""
+        return prediction
 
 
 
@@ -61,73 +133,34 @@ class DetectionApp:
             prediction = self.track_objects(prediction, video_frame)
 
         self.process_predicted_frame(prediction=prediction, video_frame=video_frame)
-
+        
         if self.show or self.save:
-            self.annotate_image(prediction, video_frame)
-            if self.show:
-                self.visualization()
-            if self.save:
-                self.save_video()
+            rendered_frame = self.renderer.render(prediction, video_frame)
+            self.handle_rendered_outputs(rendered_frame)
 
+    
     def infer(self, video_frames: List[VideoFrame]) -> List[Any]:
-        predictions = self.model.predict([v.image for v in video_frames])
+        """Run inference on frames"""
+        predictions = self.model.predict(
+            [v.image for v in video_frames],
+            threshold=PREDICT_THRESHOLD,
+        )
         return [predictions]
 
     def track_objects(self, prediction, video_frame):
+        """Track objects with ByteTrack"""
         tracked_detections = self.tracker.update_with_detections(prediction)
         return tracked_detections
 
-    def annotate_image(self, prediction, video_frame):
-        if self.track and prediction.tracker_id is not None:
-            labels = [
-                f"Drone {conf:.2f} ID:{int(track_id)}"
-                for track_id, conf in zip(
-                    prediction.tracker_id,
-                    prediction.confidence
-                )
-            ]
-        else:
-            labels = [
-                f"Drone {conf:.2f}"
-                for conf in prediction.confidence
-            ]
-
-        annotated_image = video_frame.image.copy()
-
-        annotated_image = self.box_annotator.annotate(
-            scene=annotated_image,
-            detections=prediction
-        )
-
-        annotated_image = self.label_annotator.annotate(
-            annotated_image,
-            detections=prediction,
-            labels=labels
-        )
-
-        self.last_frame = annotated_image
-
-    def save_video(self):
-        if self.last_frame is not None:
-            self.sink.write_frame(self.last_frame)
-
-    def visualization(self):
-        cv2.imshow("Predictions", self.last_frame)
-
-        key = cv2.waitKey(1) & 0xFF
-
-        if key == ord("q"):
-            self.pipeline.terminate()
-            exit()
-
-        elif key == ord(" "):
-            self.paused = not self.paused
-            print("Paused" if self.paused else "Resumed")
+    def handle_rendered_outputs(self, frame):
+        """Handles rendered outputs, for saving or visualization"""
+        self.last_frame = frame
+        self.output_manager.emit(frame, self.pipeline)
 
     def run(self):
         if self.save:
             with sv.VideoSink(self.output_path, self.video_info) as sink:
-                self.sink = sink
+                self.output_manager.set_sink(sink)
                 self.pipeline.start()
                 self.pipeline.join()
         else:
@@ -141,7 +174,7 @@ class DetectionApp:
 def parse_args():
     parser = argparse.ArgumentParser(description="Detection App")
 
-    parser.add_argument("--video", type=str, default=VIDEO_PATH)
+    parser.add_argument("--source", type=str, default=VIDEO_PATH)
     parser.add_argument("--weights", type=str, default=MODEL_PATH)
     parser.add_argument("--output", type=str, default=OUTPUT_VIDEO_PATH)
     
@@ -157,7 +190,7 @@ if __name__ == "__main__":
 
     app = DetectionApp(
         weights_path=args.weights,
-        video_source=args.video,
+        video_source=args.source,
         show=args.show,
         save=args.save,
         track=args.track,
