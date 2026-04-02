@@ -178,7 +178,7 @@ class BaseDetectionApp(ABC):
 
     def run(self) -> None:
         if self.save:
-            with sv.VideoSink(self.output_path, self.video_info) as sink:
+            with sv.VideoSink(self.output_path, self.video_info, codec="H264") as sink:
                 self.output_manager.set_sink(sink)
                 self.pipeline.start()
                 self.pipeline.join()
