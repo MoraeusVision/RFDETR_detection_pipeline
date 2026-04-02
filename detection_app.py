@@ -1,6 +1,7 @@
 import cv2
 import logging
-from typing import List, Any
+from abc import ABC, abstractmethod
+from typing import List, Any, Optional
 from inference.core.interfaces.camera.entities import VideoFrame
 from inference import InferencePipeline
 from rfdetr import RFDETRNano
@@ -22,7 +23,7 @@ class PredictionFrameRenderer:
         self.label_annotator = sv.LabelAnnotator()
         self.box_annotator = sv.BoxAnnotator()
 
-    def get_labels(self, prediction):
+    def get_labels(self, prediction) -> List[str]:
         if self.track and prediction.tracker_id is not None:
             return [
                 f"Drone {conf:.2f} ID:{int(track_id)}"
@@ -49,7 +50,7 @@ class PredictionFrameRenderer:
             labels=labels,
         )
 
-        return annotated_image
+        return annotated_image  # type: ignore
 
 
 class FrameOutputManager:
@@ -60,17 +61,17 @@ class FrameOutputManager:
         self.sink = None
         self.paused_frame = None
 
-    def set_sink(self, sink):
+    def set_sink(self, sink) -> None:
         self.sink = sink
 
-    def emit(self, frame, pipeline):
+    def emit(self, frame, pipeline) -> None:
         if self.show and frame is not None:
             self.visualize(frame, pipeline)
 
         if self.save and self.sink is not None and frame is not None:
             self.sink.write_frame(frame)
 
-    def visualize(self, frame, pipeline):
+    def visualize(self, frame, pipeline) -> None:
         # Pause only affects what is displayed; inference and saving continue.
         display_frame = self.paused_frame if self.paused and self.paused_frame is not None else frame
         cv2.imshow("Predictions", display_frame)
@@ -89,7 +90,13 @@ class FrameOutputManager:
                 self.paused_frame = None
             logging.info("Paused" if self.paused else "Resumed")
 
-class DetectionApp:
+class BaseDetectionApp(ABC):
+    """Abstract base class for detection applications with custom frame processing logic.
+    
+    Subclasses should implement the `process_predicted_frame` method to add custom
+    logic that processes predictions and video frames during the detection pipeline.
+    """
+    
     def __init__(self, weights_path: str, video_source: str, show: bool, save: bool, output_path: str, track: bool):
         self.show = show
         self.save = save
@@ -118,9 +125,21 @@ class DetectionApp:
             on_prediction=self.on_prediction,
         )
 
-    def process_predicted_frame(self, prediction, video_frame):
-        """Project logic comes here"""
-        return prediction
+    @abstractmethod
+    def process_predicted_frame(self, prediction: Any, video_frame: VideoFrame) -> Any:
+        """Hook method for subclasses to implement custom frame processing logic.
+        
+        This method is called after object detection and tracking (if enabled).
+        Subclasses should override this method to add custom processing logic.
+        
+        Args:
+            prediction: The detection predictions object from the model.
+            video_frame: The current video frame with metadata.
+            
+        Returns:
+            The (possibly modified) prediction object.
+        """
+        pass
 
 
 
@@ -128,7 +147,7 @@ class DetectionApp:
 ##### Detection and tracking functions #####
 
 
-    def on_prediction(self, prediction, video_frame):
+    def on_prediction(self, prediction: Any, video_frame: VideoFrame) -> None:
         if self.track:
             prediction = self.track_objects(prediction, video_frame)
 
@@ -147,17 +166,17 @@ class DetectionApp:
         )
         return [predictions]
 
-    def track_objects(self, prediction, video_frame):
+    def track_objects(self, prediction: Any, video_frame: VideoFrame) -> Any:
         """Track objects with ByteTrack"""
         tracked_detections = self.tracker.update_with_detections(prediction)
         return tracked_detections
 
-    def handle_rendered_outputs(self, frame):
+    def handle_rendered_outputs(self, frame) -> None:
         """Handles rendered outputs, for saving or visualization"""
         self.last_frame = frame
         self.output_manager.emit(frame, self.pipeline)
 
-    def run(self):
+    def run(self) -> None:
         if self.save:
             with sv.VideoSink(self.output_path, self.video_info) as sink:
                 self.output_manager.set_sink(sink)
@@ -169,6 +188,13 @@ class DetectionApp:
 
         cv2.destroyAllWindows()
 
+
+class DetectionApp(BaseDetectionApp):
+    """Concrete implementation of BaseDetectionApp with default frame processing."""
+    
+    def process_predicted_frame(self, prediction: Any, video_frame: VideoFrame) -> Any:
+        """Default implementation that performs no additional processing."""
+        return prediction
 
 
 def parse_args():
