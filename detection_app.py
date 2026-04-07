@@ -8,13 +8,17 @@ from rfdetr import RFDETRNano
 import supervision as sv
 from utils import get_device, parse_video_source
 import argparse
+from huggingface_hub import hf_hub_download
 
 logging.basicConfig(level=logging.INFO, format='[%(asctime)s] [%(levelname)s] %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 VIDEO_PATH = "example_media/drones/vid_drone2.mp4"
-MODEL_PATH = "models/drone_detection/checkpoint_best_ema.pth"
+
+REPO_ID = "your hugging face repo"
+MODEL_FILENAME = "your model file name"
+
 OUTPUT_VIDEO_PATH = "output/saved_video.mp4"
-PREDICT_THRESHOLD = 0.1
+PREDICT_THRESHOLD = 0.4
 
 
 class PredictionFrameRenderer:
@@ -26,14 +30,14 @@ class PredictionFrameRenderer:
     def get_labels(self, prediction) -> List[str]:
         if self.track and prediction.tracker_id is not None:
             return [
-                f"Drone {conf:.2f} ID:{int(track_id)}"
+                f"Drone - Tracking ID:{int(track_id)}"
                 for track_id, conf in zip(
                     prediction.tracker_id,
                     prediction.confidence,
                 )
             ]
 
-        return [f"Drone {conf:.2f}" for conf in prediction.confidence]
+        return [f"Drone" for conf in prediction.confidence]
 
     def render(self, prediction, video_frame):
         labels = self.get_labels(prediction)
@@ -104,6 +108,12 @@ class BaseDetectionApp(ABC):
         self.output_path = output_path
         self.last_frame = None
         self.video_source = parse_video_source(video_source)
+
+        # Download model from Hugging face
+        weights_path = hf_hub_download(
+            repo_id=REPO_ID,
+            filename=MODEL_FILENAME
+        )
 
         # Model
         self.model = RFDETRNano(pretrain_weights=weights_path, device=get_device())
@@ -201,7 +211,6 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Detection App")
 
     parser.add_argument("--source", type=str, default=VIDEO_PATH)
-    parser.add_argument("--weights", type=str, default=MODEL_PATH)
     parser.add_argument("--output", type=str, default=OUTPUT_VIDEO_PATH)
     
     parser.add_argument("--track", action="store_true", help="Enable tracking")
@@ -215,7 +224,6 @@ if __name__ == "__main__":
     args = parse_args()
 
     app = DetectionApp(
-        weights_path=args.weights,
         video_source=args.source,
         show=args.show,
         save=args.save,

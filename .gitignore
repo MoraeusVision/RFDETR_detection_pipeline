@@ -201,13 +201,15 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
+# Marimo
+marimo/_static/
+marimo/_lsp/
+__marimo__/
+
 # Ignore model artifacts in project/
 models/*
 !models/.gitkeep
 output/*
 !output/.gitkeep
-
-# Marimo
-marimo/_static/
-marimo/_lsp/
-__marimo__/
+example_media/*
+!example_media/.gitkeep

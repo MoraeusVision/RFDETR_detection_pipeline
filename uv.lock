@@ -4492,6 +4492,7 @@ name = "rfdetr-detection-pipeline"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "huggingface-hub" },
     { name = "inference" },
     { name = "opencv-python" },
     { name = "rfdetr" },
@@ -4500,6 +4501,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "huggingface-hub", specifier = ">=1.8.0" },
     { name = "inference", specifier = ">=1.2.0" },
     { name = "opencv-python", specifier = ">=4.10.0.84" },
     { name = "rfdetr", specifier = ">=1.6.2" },
